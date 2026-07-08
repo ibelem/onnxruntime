@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <limits>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -587,6 +588,19 @@ BackendManager::GetModelProtoFromFusedNode(const onnxruntime::Node& fused_node,
           }
           const size_t offset = it_ext->second.first;
           const size_t length = it_ext->second.second;
+
+          // The offset value is read from the model's external_data fields and is used
+          // directly as an in-memory pointer below. Since a model file can carry the
+          // in-memory sentinel location string together with an arbitrary integer offset,
+          // reject values that cannot be a valid ORT-owned buffer address (null pointer
+          // or an address range that overflows the address space) before casting.
+          if (offset == 0 ||
+              length > (std::numeric_limits<uintptr_t>::max() - static_cast<uintptr_t>(offset))) {
+            std::ostringstream err_msg;
+            err_msg << "In-memory external initializer has invalid address/length: " << src_init->name()
+                    << ", offset: " << offset << ", length: " << length;
+            ORT_THROW(err_msg.str());
+          }
 
           LOGS(logger, VERBOSE) << "In-memory initializer EXT: " << src_init->name() << ", size: " << length;
 
