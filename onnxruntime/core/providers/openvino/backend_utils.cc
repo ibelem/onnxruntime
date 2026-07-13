@@ -188,7 +188,9 @@ void FillOutputsWithConstantData(std::shared_ptr<ov::Node> node, Ort::UnownedVal
       break;
     }
     case ov::element::Type_t::f16: {
-      FillOutputHelper<float>(out_tensor, std::move(node));
+      auto const_node = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+      auto* raw = out_tensor.GetTensorMutableRawData();
+      std::memcpy(raw, const_node->get_data_ptr(), const_node->get_byte_size());
       break;
     }
     default:
