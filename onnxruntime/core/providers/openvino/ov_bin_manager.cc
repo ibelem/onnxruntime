@@ -351,6 +351,19 @@ void BinManager::DeserializeImpl(std::istream& stream, const std::shared_ptr<Sha
   stream.seekg(header.bson_start_offset);
   ORT_ENFORCE(stream.good(), "Error: Failed to seek to BSON metadata.");
 
+  // Validate bson_size is within stream bounds before allocating
+  {
+    stream.seekg(0, std::ios::end);
+    uint64_t file_size = static_cast<uint64_t>(stream.tellg());
+    ORT_ENFORCE(stream.good(), "Error: Failed to determine stream size.");
+    ORT_ENFORCE(header.bson_start_offset <= file_size &&
+                header.bson_size <= file_size - header.bson_start_offset,
+                "Error: BSON region extends beyond stream bounds. Offset: ", header.bson_start_offset,
+                " Size: ", header.bson_size, " File size: ", file_size);
+    stream.seekg(header.bson_start_offset);
+    ORT_ENFORCE(stream.good(), "Error: Failed to seek to BSON metadata.");
+  }
+
   // Parse BSON
   nlohmann::json j;
   {
