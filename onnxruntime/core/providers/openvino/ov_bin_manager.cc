@@ -406,6 +406,16 @@ void BinManager::DeserializeImpl(std::istream& stream, const std::shared_ptr<Sha
   // Determine if we're deserializing from an external file or embedded stream
   const bool has_external_file = !external_bin_path_.value_or("").empty();
 
+  // Determine stream extent once for bounds checking in the !has_external_file path
+  uint64_t stream_size = 0;
+  if (!has_external_file) {
+    auto saved_pos = stream.tellg();
+    stream.seekg(0, std::ios::end);
+    stream_size = static_cast<uint64_t>(stream.tellg());
+    stream.seekg(saved_pos);
+    ORT_ENFORCE(stream.good(), "Error: Failed to determine stream size.");
+  }
+
   std::unique_lock lock(mutex_);
   for (const auto& [blob_name, blob_entry] : blob_map.items()) {
     uint64_t blob_offset = blob_entry[BSONFields::kDataOffset].get<uint64_t>();
@@ -417,6 +427,10 @@ void BinManager::DeserializeImpl(std::istream& stream, const std::shared_ptr<Sha
 
     // If no external file, extract blob data into vector
     if (!has_external_file) {
+      ORT_ENFORCE(blob_offset <= stream_size && blob_size <= stream_size && blob_offset <= stream_size - blob_size,
+                  "Blob offset+size out of bounds for ", blob_name,
+                  ". Offset: ", blob_offset, " Size: ", blob_size, " Stream size: ", stream_size);
+
       // Seek to blob offset and read data into vector
       auto current_pos = stream.tellg();
       stream.seekg(blob_offset);
