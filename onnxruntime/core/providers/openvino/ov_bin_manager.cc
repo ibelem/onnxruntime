@@ -406,10 +406,18 @@ void BinManager::DeserializeImpl(std::istream& stream, const std::shared_ptr<Sha
   // Determine if we're deserializing from an external file or embedded stream
   const bool has_external_file = !external_bin_path_.value_or("").empty();
 
+  // Compute stream size once for bounds checking
+  stream.seekg(0, std::ios::end);
+  uint64_t file_size = static_cast<uint64_t>(stream.tellg());
+
   std::unique_lock lock(mutex_);
   for (const auto& [blob_name, blob_entry] : blob_map.items()) {
     uint64_t blob_offset = blob_entry[BSONFields::kDataOffset].get<uint64_t>();
     uint64_t blob_size = blob_entry[BSONFields::kSize].get<uint64_t>();
+
+    ORT_ENFORCE(blob_offset <= file_size && blob_size <= file_size - blob_offset,
+                "Error: Blob offset+size out of bounds for ", blob_name,
+                ". Offset: ", blob_offset, " Size: ", blob_size, " File size: ", file_size);
 
     BlobContainer container;
     container.serialized_info.file_offset = blob_offset;
