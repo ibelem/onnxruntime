@@ -347,6 +347,22 @@ void BinManager::DeserializeImpl(std::istream& stream, const std::shared_ptr<Sha
   ORT_ENFORCE(header.version == to_underlying(BinVersion::current), "Error: Unsupported file version: ", header.version);
   ORT_ENFORCE(header.header_size == sizeof(header_t), "Error: Header size mismatch.");
 
+  // Compute stream size to validate header fields before any allocation
+  {
+    auto saved_pos = stream.tellg();
+    stream.seekg(0, std::ios::end);
+    ORT_ENFORCE(stream.good(), "Error: Failed to seek to end of stream.");
+    uint64_t stream_size = static_cast<uint64_t>(stream.tellg());
+    stream.seekg(saved_pos);
+    ORT_ENFORCE(stream.good(), "Error: Failed to restore stream position.");
+    ORT_ENFORCE(header.bson_start_offset <= stream_size,
+                "Error: bson_start_offset exceeds file size. Offset: ", header.bson_start_offset,
+                " File size: ", stream_size);
+    ORT_ENFORCE(header.bson_size <= stream_size - header.bson_start_offset,
+                "Error: bson_size exceeds available data. bson_size: ", header.bson_size,
+                " Available: ", stream_size - header.bson_start_offset);
+  }
+
   // Seek to BSON metadata and read it
   stream.seekg(header.bson_start_offset);
   ORT_ENFORCE(stream.good(), "Error: Failed to seek to BSON metadata.");
