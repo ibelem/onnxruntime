@@ -96,12 +96,18 @@ GetOutputTensor(Ort::KernelContext& context,
                 std::string output_name,
                 const SubGraphContext::string_index_map_t& output_names,
                 std::shared_ptr<ov::Node> node) {
-  // Find position of '/' in the output_name
-  auto pos = output_name.find("/");
-  // Copy the substring from start to pos
-  output_name = output_name.substr(0, pos);
-
+  // Try the full OV friendly name first; only fall back to the prefix
+  // truncated at '/' if an exact match is not found.  Truncating first
+  // can collapse distinct OV result names to the same prefix and thereby
+  // select the wrong ONNX output index.
   auto it = output_names.find(output_name);
+  if (it == output_names.end()) {
+    // Find position of '/' in the output_name
+    auto pos = output_name.find("/");
+    // Copy the substring from start to pos
+    output_name = output_name.substr(0, pos);
+    it = output_names.find(output_name);
+  }
   if (it == output_names.end()) {
     ORT_THROW(log_tag + "Output names mismatch between OpenVINO and ONNX");
   }
