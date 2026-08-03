@@ -722,6 +722,7 @@ bool scale_graph(CustomGraph& gen_graph,
       cur_node->queued = false;
     } else {
       if (cur_node->op_type == "QuantizeLinear" &&
+          !cur_node->to_node.empty() &&
           cur_node->to_node[0]->op_type == "DequantizeLinear") {
         needs_second_run = true;
         const auto& scale_name = *std::next(cur_node->node_input_name.begin());
@@ -760,7 +761,9 @@ bool scale_graph(CustomGraph& gen_graph,
 
           gen_graph.removed_nodes.splice(gen_graph.removed_nodes.end(), removed_qdq);
 
-          cur_node = cur_node->to_node[0];
+          if (!cur_node->to_node.empty()) {
+            cur_node = cur_node->to_node[0];
+          }
         }
       }
 
