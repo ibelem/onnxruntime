@@ -84,7 +84,10 @@ struct GraphNode {
     from_node.push_back(&src_node);
   }
 
-  std::vector<GraphNode*> apply_scale_to_graph(float scale_adj) {
+  std::vector<GraphNode*> apply_scale_to_graph(float scale_adj, int depth = 0) {
+    static constexpr int kMaxDepth = 4096;
+    ORT_ENFORCE(depth < kMaxDepth, "apply_scale_to_graph exceeded maximum recursion depth; model graph may be malformed.");
+
     std::vector<GraphNode*> affected_dq;
 
     auto extend = [&affected_dq, scale_adj](const std::vector<GraphNode*>& new_nodes) {
@@ -96,13 +99,13 @@ struct GraphNode {
       affected_dq.push_back(this);
     } else if ((op_type == "Add") || (op_type == "QuantizeLinear")) {
       for (auto node : from_node) {
-        extend(node->apply_scale_to_graph(scale_adj));
+        extend(node->apply_scale_to_graph(scale_adj, depth + 1));
       }
     } else if (op_type == "Conv") {
       // just adjust w&b for conv&mul, stop propagate
       for (auto node : from_node) {
         if (node->op_type == "DequantizeLinear") {
-          extend(node->apply_scale_to_graph(scale_adj));
+          extend(node->apply_scale_to_graph(scale_adj, depth + 1));
         }
       }
     } else if ((op_type == "Mul") || (op_type == "MatMul")) {
@@ -110,12 +113,12 @@ struct GraphNode {
       for (auto node : from_node) {
         if (node->op_type == "DequantizeLinear" && !find_dq) {
           find_dq = true;
-          extend(node->apply_scale_to_graph(scale_adj));
+          extend(node->apply_scale_to_graph(scale_adj, depth + 1));
         }
       }
       if (!find_dq) {
         // cannot scale dq from here, choose input 0 to propagate
-        extend(from_node.back()->from_node[0]->apply_scale_to_graph(scale_adj));
+        extend(from_node.back()->from_node[0]->apply_scale_to_graph(scale_adj, depth + 1));
       }
     } else {
       ORT_THROW("Unknown case, node: %s", ToString().data());
