@@ -787,8 +787,12 @@ bool scale_graph(CustomGraph& gen_graph,
           cur_scale /= node.scale_factor;
           set_float_initializer_data(it, cur_scale);
         } else {
-          for (std::size_t i = 0; i < scale_size; ++i) {
-            scale_data[i] /= node.scale_factor;
+          auto it = gen_graph.original_graph.GetConstantInitializer(scale_name, true);
+          const std::size_t cap = (it && it->has_raw_data()) ? it->raw_data().size() / sizeof(float) : 0;
+          if (it && it->has_raw_data() && scale_size <= cap) {
+            for (std::size_t i = 0; i < scale_size; ++i) {
+              scale_data[i] /= node.scale_factor;
+            }
           }
         }
       }
