@@ -115,7 +115,9 @@ struct GraphNode {
       }
       if (!find_dq) {
         // cannot scale dq from here, choose input 0 to propagate
-        extend(from_node.back()->from_node[0]->apply_scale_to_graph(scale_adj));
+        if (!from_node.empty() && !from_node.back()->from_node.empty()) {
+          extend(from_node.back()->from_node[0]->apply_scale_to_graph(scale_adj));
+        }
       }
     } else {
       ORT_THROW("Unknown case, node: %s", ToString().data());
@@ -183,8 +185,10 @@ struct GraphNode {
         }
       }
       if (!find_dq) {
-        auto new_nodes = from_node.back()->from_node[0]->up_propagate_scale();
-        affected_nodes.insert(affected_nodes.end(), new_nodes.begin(), new_nodes.end());
+        if (!from_node.empty() && !from_node.back()->from_node.empty()) {
+          auto new_nodes = from_node.back()->from_node[0]->up_propagate_scale();
+          affected_nodes.insert(affected_nodes.end(), new_nodes.begin(), new_nodes.end());
+        }
       }
     } else {
       affected_nodes.push_back(this);
