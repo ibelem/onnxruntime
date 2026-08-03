@@ -349,8 +349,13 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> FindLLMMatmul(const std::shared_p
       matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
     } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
       matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
-      auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr())->get_axis_vector_val();
-      slice_gather_dim = order[slice_gather_dim];
+      auto order_const = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr());
+      if (order_const) {
+        auto order = order_const->get_axis_vector_val();
+        if (slice_gather_dim >= 0 && static_cast<size_t>(slice_gather_dim) < order.size()) {
+          slice_gather_dim = order[slice_gather_dim];
+        }
+      }
     } else if (auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(last_node)) {
       if (auto tanh = ov::as_type_ptr<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
         if (auto divide = ov::as_type_ptr<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
