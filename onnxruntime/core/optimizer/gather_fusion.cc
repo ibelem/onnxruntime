@@ -197,6 +197,8 @@ Status GatherSliceToSplitFusion::ApplyImpl(Graph& graph, bool& modified, int gra
     if (condidate_consumers.size() < 2) continue;
     int64_t axis = 0;
     if (!GetAxis(graph, *condidate_consumers[0], rank, axis)) continue;
+    // Bound axis as IsSupportedGather/IsSupportedSlice do (gather_fusion.cc:65/86).
+    if (axis < 0 || axis >= rank) continue;
     auto dim = shape->dim(static_cast<int>(axis));
     if (!utils::HasDimValue(dim)) continue;
     int64_t dim_size = dim.dim_value();
