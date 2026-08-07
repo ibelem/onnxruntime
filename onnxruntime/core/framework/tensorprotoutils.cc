@@ -1794,9 +1794,14 @@ Status GetExtDataFromTensorProto(const Env& env,
           const auto blob_length = std::get<1>(blob);
           SafeInt<FileOffsetType> end_of_blob{blob_offset};
           end_of_blob += blob_length;
-          ORT_RETURN_IF(blob_offset < 0 || static_cast<uintmax_t>(end_of_blob) > file_length,
-                        "Pre-packed blob: ", key, " offset: ", blob_offset, " file_length: ", file_length,
-                        " is out of bounds and can not read in full");
+          // Bound the blob range as the external tensor read does above (the end_of_read /
+          // file_length check earlier in this function). A zero-length blob is also rejected: its
+          // size is trusted verbatim below (buffer_sizes_ / the allocation), and PrePack's expected
+          // packed size is not re-derived here, so a shrunk/empty blob must not masquerade as data.
+          ORT_RETURN_IF(blob_offset < 0 || blob_length == 0 || static_cast<uintmax_t>(end_of_blob) > file_length,
+                        "Pre-packed blob: ", key, " offset: ", blob_offset, " length: ", blob_length,
+                        " file_length: ", file_length,
+                        " is out of bounds, empty, or can not read in full");
 
           IAllocatorUniquePtr<void> data_ptr;
           ORT_RETURN_IF_ERROR(GetFileContent(env, external_data_file_path, blob_offset, blob_length,
