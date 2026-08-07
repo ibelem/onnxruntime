@@ -907,7 +907,18 @@ Status Node::LoadEdgesFromOrtFormat(const onnxruntime::fbs::NodeEdge& fbs_node_e
         ORT_RETURN_IF(edge_node == nullptr,
                       "Node::LoadEdgesFromOrtFormat, ", dst_name, " references missing node ",
                       edge_node_index, ". Invalid ORT format model.");
-        edge_set.emplace(*edge_node, fbs_edge->src_arg_index(), fbs_edge->dst_arg_index());
+        // Validate the arg indices as the node_index above is validated, so consumers that index
+        // OutputDefs()/InputDefs() with these (e.g. Graph::FinalizeFuseSubGraph) can't run off the end.
+        const int src_arg_index = fbs_edge->src_arg_index();
+        const int dst_arg_index = fbs_edge->dst_arg_index();
+        ORT_RETURN_IF(src_arg_index < 0 ||
+                          static_cast<size_t>(src_arg_index) >= edge_node->OutputDefs().size(),
+                      "Node::LoadEdgesFromOrtFormat, ", dst_name, " has out-of-range src arg index ",
+                      src_arg_index, ". Invalid ORT format model.");
+        ORT_RETURN_IF(dst_arg_index < 0,
+                      "Node::LoadEdgesFromOrtFormat, ", dst_name, " has out-of-range dst arg index ",
+                      dst_arg_index, ". Invalid ORT format model.");
+        edge_set.emplace(*edge_node, src_arg_index, dst_arg_index);
       }
     }
     return Status::OK();
@@ -6019,6 +6030,12 @@ void Graph::FinalizeFuseSubGraph(const IndexedSubGraph& sub_graph, Node& fused_n
       auto consumer_idx = consumer.Index();
       auto src_idx = output_edge.GetSrcArgIndex();
       auto dst_idx = output_edge.GetDstArgIndex();
+
+      // Bound src_idx as the input branch bounds dst_idx above (graph.cc, "if this input is
+      // an input of the fused node") before indexing the defs vector.
+      if (src_idx < 0 || static_cast<size_t>(src_idx) >= node->OutputDefs().size()) {
+        continue;
+      }
 
       // if this output is an output of the fused node add an edge for that
       auto it = output_indexes.find(node->OutputDefs()[src_idx]->Name());
