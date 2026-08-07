@@ -1492,12 +1492,19 @@ void PagedAttentionTypeAndShapeInference(ONNX_NAMESPACE::InferenceContext& ctx) 
       int64_t num_heads = getAttribute(ctx, "num_heads", 0);
       int64_t kv_num_heads = getAttribute(ctx, "kv_num_heads", 0);
       int64_t hidden_size = query_dims[1].dim_value();
-      if (hidden_size <= 0 || num_heads <= 0 || kv_num_heads < 0) {
+      // Bound kv_num_heads before the multiply to prevent signed overflow as the is_latent_kv
+      // branch does for num_heads (PagedAttentionTypeAndShapeInference, line ~1461).
+      if (hidden_size <= 0 || num_heads <= 0 || kv_num_heads < 0 ||
+          kv_num_heads > (int64_t)0x100000) {
         fail_shape_inference("Invalid hidden size or number of heads. Hidden size, num_heads and kv_num_heads must be positive integers.");
-      } else if (hidden_size % (num_heads + 2 * kv_num_heads) != 0) {
+      }
+      const int64_t denom = num_heads + 2 * kv_num_heads;
+      if (denom <= 0) {
+        fail_shape_inference("Invalid hidden size or number of heads. Hidden size, num_heads and kv_num_heads must be positive integers.");
+      } else if (hidden_size % denom != 0) {
         fail_shape_inference("Hidden size must be divisible by (num_heads + 2 * kv_num_heads).");
       }
-      int64_t head_size = hidden_size / (num_heads + 2 * kv_num_heads);
+      int64_t head_size = hidden_size / denom;
       output_shape.add_dim()->set_dim_value(head_size * num_heads);
       updateOutputShape(ctx, 0, output_shape);
     }
