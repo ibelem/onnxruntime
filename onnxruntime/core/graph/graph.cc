@@ -893,8 +893,8 @@ Status Node::LoadEdgesFromOrtFormat(const onnxruntime::fbs::NodeEdge& fbs_node_e
   ORT_RETURN_IF(fbs_node_edges.node_index() != index_,
                 "input index: ", fbs_node_edges.node_index(), " is not the same as this node's index:", index_);
 
-  auto add_edges = [&graph](const flatbuffers::Vector<const onnxruntime::fbs::EdgeEnd*>* fbs_edges,
-                            EdgeSet& edge_set, const std::string& dst_name) -> Status {
+  auto add_edges = [&graph, this](const flatbuffers::Vector<const onnxruntime::fbs::EdgeEnd*>* fbs_edges,
+                                  EdgeSet& edge_set, const std::string& dst_name, bool is_input_edges) -> Status {
     if (fbs_edges) {
       for (const auto* fbs_edge : *fbs_edges) {
         ORT_RETURN_IF(nullptr == fbs_edge, "Node::LoadEdgesFromOrtFormat, edge is missing for ", dst_name);
@@ -907,14 +907,31 @@ Status Node::LoadEdgesFromOrtFormat(const onnxruntime::fbs::NodeEdge& fbs_node_e
         ORT_RETURN_IF(edge_node == nullptr,
                       "Node::LoadEdgesFromOrtFormat, ", dst_name, " references missing node ",
                       edge_node_index, ". Invalid ORT format model.");
-        edge_set.emplace(*edge_node, fbs_edge->src_arg_index(), fbs_edge->dst_arg_index());
+        const int src_arg_index = fbs_edge->src_arg_index();
+        const int dst_arg_index = fbs_edge->dst_arg_index();
+        // Control edges use the INT_MAX slot sentinel (see Node::EdgeEnd(const Node&)); only bounds-check real slots.
+        if (src_arg_index != INT_MAX || dst_arg_index != INT_MAX) {
+          // Bound the arg slots as Graph::AddEdge does (graph.cc:1655/:1665) before storing the edge.
+          const Node& src_node = is_input_edges ? *edge_node : *this;
+          const Node& dst_node = is_input_edges ? *this : *edge_node;
+          ORT_RETURN_IF(src_arg_index < 0 ||
+                            static_cast<size_t>(src_arg_index) >= src_node.OutputDefs().size(),
+                        "Node::LoadEdgesFromOrtFormat, ", dst_name, " has out-of-range src arg index ",
+                        src_arg_index, ". Invalid ORT format model.");
+          ORT_RETURN_IF(dst_arg_index < 0 ||
+                            static_cast<size_t>(dst_arg_index) >=
+                                dst_node.InputDefs().size() + dst_node.ImplicitInputDefs().size(),
+                        "Node::LoadEdgesFromOrtFormat, ", dst_name, " has out-of-range dst arg index ",
+                        dst_arg_index, ". Invalid ORT format model.");
+        }
+        edge_set.emplace(*edge_node, src_arg_index, dst_arg_index);
       }
     }
     return Status::OK();
   };
 
-  ORT_RETURN_IF_ERROR(add_edges(fbs_node_edges.input_edges(), relationships_.input_edges, "input edges"));
-  ORT_RETURN_IF_ERROR(add_edges(fbs_node_edges.output_edges(), relationships_.output_edges, "output edges"));
+  ORT_RETURN_IF_ERROR(add_edges(fbs_node_edges.input_edges(), relationships_.input_edges, "input edges", true));
+  ORT_RETURN_IF_ERROR(add_edges(fbs_node_edges.output_edges(), relationships_.output_edges, "output edges", false));
 
   return Status::OK();
 }
@@ -6021,9 +6038,12 @@ void Graph::FinalizeFuseSubGraph(const IndexedSubGraph& sub_graph, Node& fused_n
       auto dst_idx = output_edge.GetDstArgIndex();
 
       // if this output is an output of the fused node add an edge for that
-      auto it = output_indexes.find(node->OutputDefs()[src_idx]->Name());
-      if (it != output_indexes.cend()) {
-        AddEdge(new_node_idx, consumer_idx, it->second, dst_idx);
+      // Bound src_idx as the dst_idx guard above does before indexing OutputDefs().
+      if (src_idx < static_cast<int>(node->OutputDefs().size())) {
+        auto it = output_indexes.find(node->OutputDefs()[src_idx]->Name());
+        if (it != output_indexes.cend()) {
+          AddEdge(new_node_idx, consumer_idx, it->second, dst_idx);
+        }
       }
 
       RemoveEdge(node_index, consumer_idx, src_idx, dst_idx);
